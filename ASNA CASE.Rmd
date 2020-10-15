@@ -1,0 +1,158 @@
+---
+title: "ASNA Case"
+author: "SongQi Wang  1003439442"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r, echo=FALSE, message=FALSE, fig.height=7, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rpart)
+library(partykit)
+library(knitr)
+library(GGally)
+library(Hmisc)
+library(psych)
+
+path <- "D:/R_Project/ASNA Case comp/"
+
+raw_data <- read_csv(paste0(path,"rawdata.csv"))
+
+bridge_data <- raw_data %>% select(RoadType, 
+                                         NumberofLanes, 
+                                         AvgDailyTraffic,
+                                         OperationalStatus,
+                                         StructureMaterial,
+                                         DeckMaterial,
+                                         BridgeDesign,
+                                         NumberofSpans,
+                                         BridgeLength,
+                                         RoadWidth,
+                                         DeckWidth,
+                                         Age,
+                                         nd_rp) 
+
+bridge_data = bridge_data %>% filter(Age >= 0) 
+
+numeric_data = bridge_data
+numeric_data
+
+bridge_data$StructureMaterial = factor(bridge_data$StructureMaterial, levels=1:3, labels=c('Concrete','Steel','Wood'))
+
+bridge_data$DeckMaterial = factor(bridge_data$DeckMaterial, levels=1:3, labels=c('Concrete','Steel','Wood'))
+
+bridge_data$RoadType = factor(bridge_data$RoadType, levels=1:5, labels=c('Highway','Thoroughfare','Secondary', 'City_St','Other'))
+
+bridge_data$OperationalStatus = factor(bridge_data$OperationalStatus, levels=1:5, labels=c('NoRestriction','TemporaryFix','Restriction', 'Closed','NewNotOpen'))
+
+bridge_data$AvgDailyTraffic = as.numeric(bridge_data$AvgDailyTraffic)
+
+
+
+# bridge_data$Age = (bridge_data$Age - mean(bridge_data$Age))/sd(bridge_data$Age)
+# bridge_data$RoadWidth = (bridge_data$RoadWidth - mean(bridge_data$RoadWidth))/sd(bridge_data$RoadWidth)
+# bridge_data$DeckWidth = (bridge_data$DeckWidth - mean(bridge_data$DeckWidth))/sd(bridge_data$DeckWidth)
+# bridge_data$BridgeLength = (bridge_data$BridgeLength - mean(bridge_data$BridgeLength))/sd(bridge_data$BridgeLength)
+
+
+bridge_data = na.omit(bridge_data)
+bridge_data
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+glm_bridge <- glm( nd_rp ~ .,
+             data = bridge_data,
+            family=binomial(link = 'logit'))
+
+
+
+summary(glm_bridge)
+#data prepare
+```
+  
+  
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+  
+bridge_table = as.data.frame(summary(glm_bridge)$coef)
+bridge_table
+
+bridge_table$lower = bridge_table$Estimate - 2*bridge_table$'Std. Error'
+bridge_table$upper = bridge_table$Estimate + 2*bridge_table$'Std. Error'
+repair_oddsRatio = exp(bridge_table[,c('Estimate','lower','upper')])
+rownames(repair_oddsRatio)[1] = 'repair_prob'
+repair_oddsRatio[1,] = repair_oddsRatio[1,]/(1+repair_oddsRatio[,1])
+repair_oddsRatio
+
+repair_Pred = as.data.frame(predict(glm_bridge, bridge_data,  se.fit=TRUE))
+
+repair_Pred$lower = repair_Pred$fit - 2*repair_Pred$se.fit
+repair_Pred$upper = repair_Pred$fit + 2*repair_Pred$se.fit
+repair_PredExp = exp(repair_Pred[,c('fit','lower','upper')])
+repair_PredProb = repair_PredExp / (1+repair_PredExp)
+
+repair_PredProb
+
+
+bridge_data
+
+#model fitting
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+plot_1 = data.frame(bridge_data$Age,
+                    repair_PredProb$fit,
+                    bridge_data$StructureMaterial,
+                    bridge_data$DeckMaterial,
+                    bridge_data$RoadType)
+
+
+colnames(plot_1)[1]='Age'
+colnames(plot_1)[2]='Prob'
+colnames(plot_1)[3]='StructureMaterial'
+colnames(plot_1)[4]='DeckMaterial'
+
+colnames(plot_1)[5]='RoadType'
+
+
+plot_1
+# plot_1 = filter(plot_1, Age >= 0)
+# plot_1 = filter(plot_1, StructureMaterial == 'Wood')
+
+ggplot(plot_1, aes(x= Age, y=Prob, col = StructureMaterial, pch = DeckMaterial) )+
+  labs(x="Age", y="Probability") +
+  geom_point()+
+  theme(plot.title=element_text(size=15,
+                                    hjust=0.5,
+                                    lineheight=1.2))
+
+
+
+
+bridge_data
+
+# plot_2 = data.frame(bridge_data$AvgDailyTraffic,
+#                     repair_PredProb$fit,
+#                     bridge_data$StructureMaterial,
+#                     bridge_data$DeckMaterial,
+#                     bridge_data$RoadType)
+# 
+# colnames(plot_2)[1]='AvgDailyTraffic'
+# colnames(plot_2)[2]='Prob'
+# colnames(plot_2)[3]='StructureMaterial'
+# colnames(plot_2)[4]='DeckMaterial'
+# colnames(plot_2)[5]='RoadType'
+
+#visualization
+```
+
+
+
+
+
+
+

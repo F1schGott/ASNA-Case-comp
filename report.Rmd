@@ -1,0 +1,193 @@
+---
+title: "ASNA Case Round 0"
+author: "Team 4"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+# Summary
+
+In order to calculate the probability that a bridge needs to be repaired or replaced, we cleaned up the given data set. We did this by replacing missing data with the mean or mode of the subset. We used the bridge information to develop a logistic regression model. As a result, by plugging in a bridge’s parameters, our model is able to predict the probability that a bridge will need to be repaired.
+
+# Method
+
+After excluding the irrelevant variables and doing a correlation matrix test between each of the two numeric varibles, we decided to use RoadType, NumberofLanes, AvgDailyTraffic, OperationalStatus, StructureMaterial, DeckMaterial, BridgeDesign, NumberofSpans, BridgeLength, NumberofSpans, BridgeLength, DeckWidth, and Age as our explanatory variable. We made the needtorepair indicator as our response variable. Here, the Age of a bridge is the number of years from the year of being built or year of most recent reconstruction to the inspection year.
+
+Being that we seeked to model probabilities, it was a natural choice to use the logistic regression model. We considered the following model for each of the aforementioned analysis:
+
+$$\begin{split}
+\ln (\frac{\pi}{1-\pi}) = &\beta_0 + \beta_1 I_{Type} + \beta_2 x_{Lanes} + \beta_3 x_{Traffic} + \beta_4 I_{Status} + \beta_5 I_{SMaterial} + \\
+&\beta_6 I_{DMaterial} + \beta_7 x_{Design} + \beta_8 x_{Spans} + \beta_9 x_{Length} + \beta_{10} x_{Width} + \beta_{11} x_{Age}
+\end{split}$$
+
+$\pi$ is the probability of a bridge needs repair or replacement.
+
+
+        
+```{r, echo=FALSE, message=FALSE, fig.height=7, warning=FALSE}
+
+
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rpart)
+library(partykit)
+library(knitr)
+library(GGally)
+library(Hmisc)
+library(psych)
+
+path <- "D:/R_Project/ASNA Case comp/"
+
+raw_data <- read_csv(paste0(path,"pros3.csv"))
+
+bridge_data2 <-  raw_data %>% select(NumberofLanes,
+                                   AvgDailyTraffic,
+                                   OperationalStatus,
+                                   StructureMaterial,
+                                   DeckMaterial,
+                                   BridgeDesign,
+                                   NumberofSpans,
+                                   BridgeLength,
+                                   RoadWidth,
+                                   DeckWidth,
+                                   Age
+                                   )
+
+bridge_data <- raw_data %>% select(RoadType, 
+                                   NumberofLanes, 
+                                   AvgDailyTraffic,
+                                   OperationalStatus,
+                                   StructureMaterial,
+                                   DeckMaterial,
+                                   BridgeDesign,
+                                   NumberofSpans,
+                                   BridgeLength,
+                                   # RoadWidth,
+                                   DeckWidth,
+                                   Age,
+                                   nd_rp) 
+# 
+# cor_graph = cor.ci(bridge_data2, method = 'spearman')
+
+bridge_data = bridge_data %>% filter(Age >= 0) #expected build date is in the future 
+
+bridge_data$StructureMaterial = factor(bridge_data$StructureMaterial, levels=1:3, labels=c('Concrete','Steel','Wood'))
+
+bridge_data$DeckMaterial = factor(bridge_data$DeckMaterial, levels=1:3, labels=c('Concrete','Steel','Wood'))
+
+bridge_data$RoadType = factor(bridge_data$RoadType, levels=1:5, labels=c('Highway','Thoroughfare','Secondary', 'CityStreet','Other'))
+
+bridge_data$OperationalStatus = factor(bridge_data$OperationalStatus, levels=1:5, labels=c('NoRestriction','TemporaryFix','Restriction', 'Closed','NewNotOpen'))
+
+bridge_data = na.omit(bridge_data)
+```
+
+Based on the correlation matrix, RoadWidth and DeckWidth are highly correlated, so we chose DeckWidth as the parameter to represent the width of bridge.
+
+\newpage
+
+# Result
+
+Given a bridges’ characteristic, we are able to use our logistic regression model and predict the probability of repair or replacement.  
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+glm_bridge <- glm( nd_rp ~ .,
+                   data = bridge_data,
+                   family=binomial(link = 'logit'))
+
+logglm1_table = summary(glm_bridge)$coef
+
+logglm1_table[,1] = exp(logglm1_table[,1])
+
+colnames(logglm1_table) = c("Exp. Estimate","Std. Error","t value","P-Value") 
+rownames(logglm1_table)[1] = 'Intercept'
+
+knitr::kable(logglm1_table, digits = 3, cap= 'Exponential estimated parameters of logistic model' )
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+
+bridge_table = as.data.frame(summary(glm_bridge)$coef)
+
+# bridge_table$lower = bridge_table$Estimate - 2*bridge_table$'Std. Error'
+# bridge_table$upper = bridge_table$Estimate + 2*bridge_table$'Std. Error'
+# repair_oddsRatio = exp(bridge_table[,c('Estimate','lower','upper')])
+# rownames(repair_oddsRatio)[1] = 'repair_prob'
+# repair_oddsRatio[1,] = repair_oddsRatio[1,]/(1+repair_oddsRatio[,1])
+```
+
+Then we subsitute the data into the model again with the parameters we just estimated. We predict the probability of repair or replacement and we plot probability of repair or replacement with respect to age in a graph shown below, since we found that age is very significent.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+repair_Pred = as.data.frame(predict(glm_bridge, bridge_data,  se.fit=TRUE))
+
+repair_Pred$lower = repair_Pred$fit - 2*repair_Pred$se.fit
+repair_Pred$upper = repair_Pred$fit + 2*repair_Pred$se.fit
+repair_PredExp = exp(repair_Pred[,c('fit','lower','upper')])
+repair_PredProb = repair_PredExp / (1+repair_PredExp)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.height=3,}
+
+plot_1 = data.frame(bridge_data$Age,
+                    repair_PredProb$fit,
+                    bridge_data$StructureMaterial,
+                    bridge_data$DeckMaterial,
+                    bridge_data$RoadType)
+
+colnames(plot_1)[1]='Age'
+colnames(plot_1)[2]='Prob'
+colnames(plot_1)[3]='StructureMaterial'
+colnames(plot_1)[4]='DeckMaterial'
+
+ggplot(plot_1, aes(x= Age, y=Prob, col = StructureMaterial, pch = DeckMaterial) )+
+  labs(title = "Estimated probability of exsisting data ",x="Age", y="Probability") +
+  geom_point()+
+  theme(plot.title=element_text(size=15,
+                                hjust=0.5,
+                                lineheight=1.2))
+
+# plot_3 = data.frame(bridge_data$Age,
+#                     repair_PredProb$fit,
+#                     bridge_data$StructureMaterial,
+#                     bridge_data$DeckMaterial,
+#                     bridge_data$RoadType)
+# 
+# colnames(plot_3)[1]='Age'
+# colnames(plot_3)[2]='Prob'
+# colnames(plot_3)[3]='StructureMaterial'
+# colnames(plot_3)[4]='DeckMaterial'
+# 
+# ggplot(plot_3, aes(x= Age, y=Prob, col = DeckMaterial) )+
+#   labs(title = "Estimated probability of exsisting data ",x="Age", y="Probability") +
+#   geom_point()+
+#   theme(plot.title=element_text(size=15,
+#                                 hjust=0.5,
+#                                 lineheight=1.2))
+# 
+# plot_2 = data.frame(bridge_data$DeckWidth,
+#                     repair_PredProb$fit,
+#                     bridge_data$StructureMaterial,
+#                     bridge_data$DeckMaterial)
+# 
+# colnames(plot_2)[1]='DeckWidth'
+# colnames(plot_2)[2]='Prob'
+# colnames(plot_2)[3]='StructureMaterial'
+# colnames(plot_2)[4]='DeckMaterial'
+# 
+# plot_2 = plot_2 %>% filter(DeckWidth <= 100)
+# 
+# 
+# ggplot(plot_2, aes(x= DeckWidth, y=Prob, col = StructureMaterial, pch = DeckMaterial) )+
+#   labs(title = "Estimated probability of exsisting data ",x="DeckWidth", y="Probability") +
+#   geom_point()+
+#   theme(plot.title=element_text(size=15,
+#                                 hjust=0.5,
+#                                 lineheight=1.2))
+
+```
